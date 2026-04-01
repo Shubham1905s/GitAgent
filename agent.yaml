@@ -1,0 +1,27 @@
+spec_version: "0.1.0"
+name: ai-code-review-agent
+version: 0.1.0
+description: "AI agent for code review"
+
+model:
+  preferred: openrouter:z-ai/glm-4.5-air:free
+  constraints:
+    temperature: 0.2
+    max_tokens: 512
+
+tools:
+  - cli
+  - read
+  - write
+  - memory
+
+runtime:
+  max_turns: 10
+  timeout: 120
+
+skills:
+  - orchestrator
+  - code-review
+
+tags:
+  - hackathon
