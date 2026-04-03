@@ -27,7 +27,7 @@ Follow these steps to run the agent on your machine.
 
 ### 2. Clone the Repository
 ```bash
-git clone https://github.com/your-username/GitAgent.git
+git clone https://github.com/Shubham1905s/GitAgent.git
 cd GitAgent/code-review-agent
 ```
 
