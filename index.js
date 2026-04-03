@@ -3,6 +3,30 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { commentOnPR, createPR, getPRDiff, mergePR } from "./github.js";
 
+/**
+ * polyfill for createAgent if not exported by gitclaw
+ */
+async function createAgent({ repoPath }) {
+  return {
+    run: async ({ input }) => {
+      const result = query({
+        dir: repoPath,
+        prompt: input,
+      });
+      let finalResponse = "";
+      for await (const message of result) {
+        if (message.type === "assistant") {
+          finalResponse = message.content;
+        }
+        if (message.type === "system" && message.subtype === "error") {
+          throw new Error(message.content);
+        }
+      }
+      return finalResponse;
+    },
+  };
+}
+
 function loadLocalEnv() {
   const envPath = resolve(".env");
   if (!existsSync(envPath)) return;
@@ -28,66 +52,59 @@ async function run() {
 
   const owner = process.env.GITHUB_OWNER;
   const repo = process.env.GITHUB_REPO;
-  const pullNumber = Number(process.env.GITHUB_PR_NUMBER);
+  const pull_number = Number(process.env.GITHUB_PR_NUMBER);
   const devBranch = process.env.GITHUB_DEV_BRANCH || "dev";
   const stagingBranch = process.env.GITHUB_STAGING_BRANCH || "staging";
   const mainBranch = process.env.GITHUB_MAIN_BRANCH || "main";
 
-  if (!owner || !repo || !Number.isInteger(pullNumber) || pullNumber <= 0) {
+  if (!owner || !repo || !Number.isInteger(pull_number) || pull_number <= 0) {
     throw new Error(
       "Missing GitHub config. Set GITHUB_OWNER, GITHUB_REPO, and GITHUB_PR_NUMBER in .env.",
     );
   }
 
-  console.log("Fetching PR...");
-  const diff = await getPRDiff(owner, repo, pullNumber);
-
-  console.log("Running AI review...");
-
-  const result = query({
-    dir: "./",
-    prompt: [
-      "Review this GitHub pull request diff.",
-      "Focus on correctness, bugs, edge cases, missing tests, and security concerns.",
-      "Keep the feedback concise and actionable.",
-      "",
-      `Repository: ${owner}/${repo}`,
-      `Pull Request: #${pullNumber}`,
-      "",
-      "Diff:",
-      diff,
-    ].join("\n"),
+  const agent = await createAgent({
+    repoPath: "./",
   });
 
-  let finalResponse = "";
+  console.log("Fetching PR...");
+  const diff = await getPRDiff(owner, repo, pull_number);
 
-  for await (const message of result) {
-    if (message.type === "assistant") {
-      finalResponse = message.content;
-    }
+  // 🔍 Code Review
+  console.log("Running AI review...");
+  const review = await agent.run({
+    input: `Review this GitHub pull request diff. Focus on correctness, bugs, and edge cases.\n\nDiff:\n${diff}`,
+  });
 
-    if (message.type === "system" && message.subtype === "error") {
-      throw new Error(message.content);
-    }
-  }
+  await commentOnPR(owner, repo, pull_number, "### 🤖 AI Review\n" + review);
 
-  if (!finalResponse) {
-    throw new Error("No response received from the agent.");
-  }
+  // ⚠️ Risk Scoring
+  console.log("Analyzing risk...");
+  const risk = await agent.run({
+    input: `Analyze the risk of this PR diff. Classify it as LOW RISK, MEDIUM RISK, or HIGH RISK.\n\nDiff:\n${diff}`,
+  });
 
-  console.log("Posting comment...");
-  await commentOnPR(owner, repo, pullNumber, `AI Review\n\n${finalResponse}`);
+  await commentOnPR(owner, repo, pull_number, "### ⚠️ Risk Analysis\n" + risk);
 
-  const normalizedResponse = finalResponse.toLowerCase();
-  const isSafe = !normalizedResponse.includes("error");
+  const isHighRisk = risk.toLowerCase().includes("high");
 
-  if (!isSafe) {
-    console.log("❌ PR not safe. Skipping promotion.");
-    console.log("\n=== AGENT RESPONSE ===\n");
-    console.log(finalResponse);
+  // 🧠 Decision Logic
+  if (isHighRisk) {
+    console.log("⚠️ High risk PR. Waiting for human approval.");
+
+    await commentOnPR(
+      owner,
+      repo,
+      pull_number,
+      "🚨 High-risk PR detected. Requires manual approval before promotion."
+    );
+
     return;
   }
 
+  console.log("✅ Low risk PR. Auto promoting...");
+
+  // 🚀 Promote dev → staging
   console.log(`Promoting ${devBranch} -> ${stagingBranch}...`);
   const stagingPR = await createPR(
     owner,
@@ -95,12 +112,12 @@ async function run() {
     `Promote ${devBranch} -> ${stagingBranch}`,
     devBranch,
     stagingBranch,
-    "Automated promotion after AI PR review.",
+    "Automated promotion after AI PR review."
   );
 
-  console.log("Merging to staging...");
   await mergePR(owner, repo, stagingPR.number);
 
+  // 🚀 Promote staging → main
   console.log(`Promoting ${stagingBranch} -> ${mainBranch}...`);
   const mainPR = await createPR(
     owner,
@@ -108,15 +125,19 @@ async function run() {
     `Promote ${stagingBranch} -> ${mainBranch}`,
     stagingBranch,
     mainBranch,
-    "Automated promotion after staging approval gate.",
+    "Automated promotion after staging approval gate."
   );
 
-  console.log("Merging to main...");
   await mergePR(owner, repo, mainPR.number);
 
-  console.log("\n=== AGENT RESPONSE ===\n");
-  console.log(finalResponse);
-  console.log("\n✅ Done! Check your PR.");
+  await commentOnPR(
+    owner,
+    repo,
+    pull_number,
+    "🚀 Successfully promoted to production!"
+  );
+
+  console.log("🎉 Done!");
 }
 
 run().catch((error) => {
