@@ -1,7 +1,7 @@
 import { query } from "gitclaw";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { commentOnPR, getPRDiff } from "./github.js";
+import { commentOnPR, createPR, getPRDiff, mergePR } from "./github.js";
 
 function loadLocalEnv() {
   const envPath = resolve(".env");
@@ -29,6 +29,9 @@ async function run() {
   const owner = process.env.GITHUB_OWNER;
   const repo = process.env.GITHUB_REPO;
   const pullNumber = Number(process.env.GITHUB_PR_NUMBER);
+  const devBranch = process.env.GITHUB_DEV_BRANCH || "dev";
+  const stagingBranch = process.env.GITHUB_STAGING_BRANCH || "staging";
+  const mainBranch = process.env.GITHUB_MAIN_BRANCH || "main";
 
   if (!owner || !repo || !Number.isInteger(pullNumber) || pullNumber <= 0) {
     throw new Error(
@@ -73,7 +76,43 @@ async function run() {
   }
 
   console.log("Posting comment...");
-  await commentOnPR(owner, repo, pullNumber, finalResponse);
+  await commentOnPR(owner, repo, pullNumber, `AI Review\n\n${finalResponse}`);
+
+  const normalizedResponse = finalResponse.toLowerCase();
+  const isSafe = !normalizedResponse.includes("error");
+
+  if (!isSafe) {
+    console.log("❌ PR not safe. Skipping promotion.");
+    console.log("\n=== AGENT RESPONSE ===\n");
+    console.log(finalResponse);
+    return;
+  }
+
+  console.log(`Promoting ${devBranch} -> ${stagingBranch}...`);
+  const stagingPR = await createPR(
+    owner,
+    repo,
+    `Promote ${devBranch} -> ${stagingBranch}`,
+    devBranch,
+    stagingBranch,
+    "Automated promotion after AI PR review.",
+  );
+
+  console.log("Merging to staging...");
+  await mergePR(owner, repo, stagingPR.number);
+
+  console.log(`Promoting ${stagingBranch} -> ${mainBranch}...`);
+  const mainPR = await createPR(
+    owner,
+    repo,
+    `Promote ${stagingBranch} -> ${mainBranch}`,
+    stagingBranch,
+    mainBranch,
+    "Automated promotion after staging approval gate.",
+  );
+
+  console.log("Merging to main...");
+  await mergePR(owner, repo, mainPR.number);
 
   console.log("\n=== AGENT RESPONSE ===\n");
   console.log(finalResponse);

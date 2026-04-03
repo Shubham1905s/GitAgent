@@ -8,14 +8,22 @@ function getGithubToken() {
   return token;
 }
 
+function getGithubHeaders(extraHeaders = {}) {
+  return {
+    Authorization: `token ${getGithubToken()}`,
+    Accept: "application/vnd.github+json",
+    "User-Agent": "code-review-agent",
+    ...extraHeaders,
+  };
+}
+
 export async function getPRDiff(owner, repo, pullNumber) {
   const res = await fetch(
     `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`,
     {
       headers: {
-        Authorization: `token ${getGithubToken()}`,
+        ...getGithubHeaders(),
         Accept: "application/vnd.github.v3.diff",
-        "User-Agent": "code-review-agent",
       },
     },
   );
@@ -34,10 +42,8 @@ export async function commentOnPR(owner, repo, issueNumber, body) {
     {
       method: "POST",
       headers: {
-        Authorization: `token ${getGithubToken()}`,
+        ...getGithubHeaders(),
         "Content-Type": "application/json",
-        Accept: "application/vnd.github+json",
-        "User-Agent": "code-review-agent",
       },
       body: JSON.stringify({ body }),
     },
@@ -46,6 +52,49 @@ export async function commentOnPR(owner, repo, issueNumber, body) {
   if (!res.ok) {
     const responseBody = await res.text();
     throw new Error(`Failed to post PR comment (${res.status}): ${responseBody}`);
+  }
+
+  return await res.json();
+}
+
+export async function createPR(owner, repo, title, head, base, body = "") {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls`,
+    {
+      method: "POST",
+      headers: {
+        ...getGithubHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title,
+        head,
+        base,
+        body,
+      }),
+    },
+  );
+
+  if (!res.ok) {
+    const responseBody = await res.text();
+    throw new Error(`Failed to create PR (${res.status}): ${responseBody}`);
+  }
+
+  return await res.json();
+}
+
+export async function mergePR(owner, repo, pullNumber) {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/merge`,
+    {
+      method: "PUT",
+      headers: getGithubHeaders(),
+    },
+  );
+
+  if (!res.ok) {
+    const responseBody = await res.text();
+    throw new Error(`Failed to merge PR (${res.status}): ${responseBody}`);
   }
 
   return await res.json();
