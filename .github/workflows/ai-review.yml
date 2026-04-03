@@ -1,0 +1,39 @@
+name: AI Code Review and Promotion
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - dev # Only review PRs targeting 'dev'
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run AI Agent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_DEV_BRANCH: 'dev'
+          GITHUB_STAGING_BRANCH: 'staging'
+          GITHUB_MAIN_BRANCH: 'main'
+        run: node index.js

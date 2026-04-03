@@ -102,10 +102,10 @@ async function run() {
     return;
   }
 
-  console.log("✅ Low risk PR. Auto promoting...");
+  console.log("✅ Low risk PR. Auto-merging original PR...");
+  await mergePR(owner, repo, pull_number);
 
-  // 🚀 Promote dev → staging
-  console.log(`Promoting ${devBranch} -> ${stagingBranch}...`);
+  console.log("🚀 Promoting dev -> staging...");
   const stagingPR = await createPR(
     owner,
     repo,
