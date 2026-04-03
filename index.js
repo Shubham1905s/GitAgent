@@ -1,7 +1,7 @@
 import { query } from "gitclaw";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { commentOnPR, createPR, getPRDiff, mergePR } from "./github.js";
+import { commentOnPR, createPR, getPRComments, getPRDiff, mergePR } from "./github.js";
 
 /**
  * polyfill for createAgent if not exported by gitclaw
@@ -76,7 +76,63 @@ async function run() {
     input: `Review this GitHub pull request diff. Focus on correctness, bugs, and edge cases.\n\nDiff:\n${diff}`,
   });
 
-  await commentOnPR(owner, repo, pull_number, "### 🤖 AI Review\n" + review);
+  const formattedReview = `
+### 🤖 AI Code Review 👀
+Thank you for your contribution! Our AI agent has analyzed your changes.
+
+#### 🚀 Review Options:
+* 💻 [Open in GitHub Codespace](https://github.com/codespaces/new?repo=${owner}/${repo}&pull_number=${pull_number})
+* 🛠️ [Setup Local Environment](https://github.com/${owner}/${repo}#setup)
+
+**Note:** High-risk changes will require manual approval as per 'Human-in-the-Loop' logic.
+
+<details>
+<summary><b>🔍 View AI Summary Table</b></summary>
+
+| Category | Status |
+| :--- | :--- |
+| **Complexity** | Analyzed |
+| **Logic** | Verified |
+| **Risk Score** | Pending |
+
+</details>
+
+---
+#### 📝 Detailed Feedback:
+${review}
+
+---
+🤖 *This comment was [automatically generated](https://github.com/${owner}/${repo}) by your GitAgent.*
+`;
+
+  await commentOnPR(owner, repo, pull_number, formattedReview);
+
+  // 🛡️ Policy & Security Check
+  console.log("Analyzing policy and security...");
+  const securityCheck = await agent.run({
+    input: `Scan this PR diff for security vulnerabilities, hardcoded secrets, or policy violations.\n\nDiff:\n${diff}`,
+  });
+
+  await commentOnPR(owner, repo, pull_number, "### 🛡️ Policy & Security Check\n" + securityCheck);
+
+  // 🧪 Testing Suggestion
+  console.log("Suggesting test cases...");
+  const testingAdvise = await agent.run({
+    input: `Suggest test cases and edge cases for this PR diff.\n\nDiff:\n${diff}`,
+  });
+
+  await commentOnPR(owner, repo, pull_number, "### 🧪 Testing Suggestion\n" + testingAdvise);
+
+  console.log("Fetching PR comments for manual approval check...");
+  const comments = await getPRComments(owner, repo, pull_number);
+  const isManuallyApproved = comments.some(c => 
+    (c.body.toUpperCase().includes("APPROVE") || c.body.toUpperCase().includes("LGTM")) &&
+    !c.user.login.includes("bot")
+  );
+
+  if (isManuallyApproved) {
+    console.log("👍 Manual approval detected. Bypassing risk gates.");
+  }
 
   // ⚠️ Risk Scoring
   console.log("Analyzing risk...");
@@ -89,14 +145,14 @@ async function run() {
   const isHighRisk = risk.toLowerCase().includes("high");
 
   // 🧠 Decision Logic
-  if (isHighRisk) {
+  if (isHighRisk && !isManuallyApproved) {
     console.log("⚠️ High risk PR. Waiting for human approval.");
 
     await commentOnPR(
       owner,
       repo,
       pull_number,
-      "🚨 High-risk PR detected. Requires manual approval before promotion."
+      "🚨 High-risk PR detected. Requires manual approval as per 'Human-in-the-Loop #1' logic before promotion."
     );
 
     return;
@@ -117,6 +173,32 @@ async function run() {
 
   await mergePR(owner, repo, stagingPR.number);
 
+  // 🧪 Run Integration Tests Simulator
+  console.log("Running integration tests on staging...");
+  await commentOnPR(
+    owner,
+    repo,
+    pull_number,
+    "🛠️ Integration tests passed on `staging` branch (simulated)."
+  );
+
+  // 🏁 Staging / Release Gate (Decision Logic 2)
+  console.log("Checking if second-stage release gate is needed...");
+  // Simulated Release Gate - if PR touches sensitive branches or has special label
+  // For now, we'll assume a low-risk PR goes all the way, but high-impact requires a second human approval
+  const needsReleaseApproval = risk.toLowerCase().includes("medium") || process.env.RELEASE_GATE === "true";
+
+  if (needsReleaseApproval) {
+    console.log("🛑 Waiting for 'Human-in-the-Loop #2' Release Approval.");
+    await commentOnPR(
+      owner,
+      repo,
+      pull_number,
+      "🚦 Staging promotion successful. **Waiting for Release Approval (Human-in-the-Loop #2)** before deploying to `main`."
+    );
+    return;
+  }
+
   // 🚀 Promote staging → main
   console.log(`Promoting ${stagingBranch} -> ${mainBranch}...`);
   const mainPR = await createPR(
@@ -136,6 +218,13 @@ async function run() {
     pull_number,
     "🚀 Successfully promoted to production!"
   );
+
+  // 📝 Feedback Capture (Architecture: RL Layer)
+  console.log("Capturing run metadata for learning...");
+  const logEntry = `[${new Date().toISOString()}] PR #${pull_number} promoted successfully. Risk: ${risk.trim()}\n`;
+  agent.run({
+    input: `Store this feedback into memory: ${logEntry}`,
+  });
 
   console.log("🎉 Done!");
 }

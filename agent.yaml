@@ -22,6 +22,8 @@ runtime:
 skills:
   - orchestrator
   - code-review
+  - policy-security
+  - testing
   - promotion
   - risk-scoring
 

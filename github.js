@@ -91,7 +91,6 @@ export async function mergePR(owner, repo, pullNumber) {
       headers: getGithubHeaders(),
     },
   );
-
   if (!res.ok) {
     const responseBody = await res.text();
     throw new Error(`Failed to merge PR (${res.status}): ${responseBody}`);
@@ -99,3 +98,20 @@ export async function mergePR(owner, repo, pullNumber) {
 
   return await res.json();
 }
+
+export async function getPRComments(owner, repo, pullNumber) {
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/issues/${pullNumber}/comments`,
+    {
+      headers: getGithubHeaders(),
+    },
+  );
+
+  if (!res.ok) {
+    const responseBody = await res.text();
+    throw new Error(`Failed to fetch PR comments (${res.status}): ${responseBody}`);
+  }
+
+  return await res.json();
+}
+

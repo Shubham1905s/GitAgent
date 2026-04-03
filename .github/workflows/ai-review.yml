@@ -4,7 +4,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
-      - dev # Only review PRs targeting 'dev'
+      - dev
+  issue_comment:
+    types: [created]
 
 jobs:
   review:
@@ -30,9 +32,10 @@ jobs:
       - name: Run AI Agent
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO: ${{ github.event.repository.name }}
-          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
           GITHUB_DEV_BRANCH: "dev"
           GITHUB_STAGING_BRANCH: "staging"
           GITHUB_MAIN_BRANCH: "main"
